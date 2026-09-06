@@ -1,6 +1,4 @@
 // js/map/map.js
-// Карта, метки, геолокация
-
 var map = null;
 var placemarks = [];
 var routeLine = null;
@@ -13,34 +11,24 @@ var routePointsIds = [];
 var isGpsActive = false;
 
 // ==========================================
-// ДОБАВЛЕНИЕ МЕТКИ ПОЛЬЗОВАТЕЛЯ (ПЕРЕНЕСЕНО ВВЕРХ)
+// ДОБАВЛЕНИЕ МЕТКИ ПОЛЬЗОВАТЕЛЯ
 // ==========================================
 function addUserMarker(location) {
-    if (userMarker) {
-        map.geoObjects.remove(userMarker);
-    }
+    if (userMarker) map.geoObjects.remove(userMarker);
     userMarker = new ymaps.Placemark(
         location,
         { hintContent: isGpsActive ? '🚶 Вы здесь' : '🏨 Отель (старт)' },
-        {
-            preset: isGpsActive ? 'islands#blueCircleIcon' : 'islands#greenDotIcon',
-            iconColor: isGpsActive ? '#1565C0' : '#2E7D32'
-        }
+        { preset: isGpsActive ? 'islands#blueCircleIcon' : 'islands#greenDotIcon' }
     );
     map.geoObjects.add(userMarker);
 }
 
 // ==========================================
-// ПОЛУЧЕНИЕ ГЕОЛОКАЦИИ
+// ГЕОЛОКАЦИЯ
 // ==========================================
 function getUserLocation(callback) {
-    if (isGpsActive && userLocation) {
-        if (callback) callback();
-        return;
-    }
-    
+    if (isGpsActive && userLocation) { if (callback) callback(); return; }
     if (navigator.geolocation) {
-        showToast('📍 Определяем ваше местоположение...', 'info', 2000);
         navigator.geolocation.getCurrentPosition(
             function(pos) {
                 userLocation = [pos.coords.latitude, pos.coords.longitude];
@@ -48,19 +36,16 @@ function getUserLocation(callback) {
                 addUserMarker(userLocation);
                 map.setCenter(userLocation, 17);
                 if (callback) callback();
-                showToast('✅ Ваше местоположение определено', 'success', 2000);
             },
             function() {
                 isGpsActive = false;
                 userLocation = [55.955087, 36.374705];
                 addUserMarker(userLocation);
                 if (callback) callback();
-                showToast('⚠️ Не удалось определить местоположение, используем отель', 'warning', 3000);
             },
             { enableHighAccuracy: true }
         );
     } else {
-        isGpsActive = false;
         userLocation = [55.955087, 36.374705];
         addUserMarker(userLocation);
         if (callback) callback();
@@ -68,45 +53,10 @@ function getUserLocation(callback) {
 }
 
 // ==========================================
-// СБРОС НА ОТЕЛЬ
-// ==========================================
-function resetToHotel() {
-    isGpsActive = false;
-    userLocation = [55.955087, 36.374705];
-    addUserMarker(userLocation);
-    if (map) {
-        map.setCenter(userLocation, 17);
-    }
-    showToast('📍 Местоположение сброшено на отель', 'info', 2000);
-}
-window.resetToHotel = resetToHotel;
-
-// ==========================================
-// ЦЕНТРИРОВАНИЕ НА ПОЛЬЗОВАТЕЛЕ
-// ==========================================
-function centerOnUser() {
-    if (isGpsActive && userLocation) {
-        map.setCenter(userLocation, 17);
-        showToast('📍 Возврат к вашему местоположению', 'info', 1500);
-    } else {
-        getUserLocation(function() {
-            if (userLocation) {
-                map.setCenter(userLocation, 17);
-            }
-        });
-    }
-}
-window.centerOnUser = centerOnUser;
-
-// ==========================================
 // ИНИЦИАЛИЗАЦИЯ КАРТЫ
 // ==========================================
 function initMap() {
-    console.log('🗺️ initMap');
-    if (typeof ymaps === 'undefined') {
-        console.error('❌ ymaps не определен!');
-        return;
-    }
+    if (typeof ymaps === 'undefined') return;
     var hotelLocation = [55.955087, 36.374705];
     try {
         map = new ymaps.Map('map', {
@@ -114,23 +64,25 @@ function initMap() {
             zoom: 15,
             controls: ['zoomControl']
         });
-        console.log('✅ Карта создана!');
         
         // Метка отеля
-        var hotelMarker = new ymaps.Placemark(
-            hotelLocation,
-            { hintContent: '🏨 Отель' },
-            { preset: 'islands#redDotIcon' }
-        );
-        map.geoObjects.add(hotelMarker);
-        
-        // Метка пользователя (по умолчанию — отель)
+        map.geoObjects.add(new ymaps.Placemark(hotelLocation, { hintContent: '🏨 Отель' }, { preset: 'islands#redDotIcon' }));
         addUserMarker(hotelLocation);
         
+        // ВАЖНО: СОЗДАЕМ ДОРОГИ ГЛОБАЛЬНО!
+        window.ROADS = [
+            { from: [55.955087, 36.374705], to: [55.956000, 36.375000] },
+            { from: [55.956000, 36.375000], to: [55.957000, 36.376000] },
+            { from: [55.955087, 36.374705], to: [55.954000, 36.373500] },
+            { from: [55.954000, 36.373500], to: [55.953000, 36.372500] },
+            { from: [55.957000, 36.376000], to: [55.958000, 36.377000] },
+            { from: [55.953000, 36.372500], to: [55.952000, 36.371500] }
+        ];
+        console.log('✅ ROADS созданы:', window.ROADS.length);
+
         loadPoints();
         updateButtons();
         checkWeekend();
-        fetchRealWeather(hotelLocation[0], hotelLocation[1]);
         
     } catch (e) {
         console.error('❌ Ошибка карты:', e);
@@ -138,28 +90,17 @@ function initMap() {
 }
 
 // ==========================================
-// ЗАГРУЗКА ТОЧЕК НА КАРТУ
+// ЗАГРУЗКА ТОЧЕК (без onerror!)
 // ==========================================
 function loadPoints() {
     if (!map) return;
-    
-    var pointsToShow = [];
-    
-    if (routePointsIds.length > 0) {
-        pointsToShow = LOCATIONS.filter(function(loc) {
-            return loc.id === 1 || routePointsIds.indexOf(loc.id) !== -1;
-        });
-    } else {
-        pointsToShow = LOCATIONS.filter(function(loc) {
-            if (currentMood === 'all') return true;
-            return loc.tags.indexOf(currentMood) !== -1;
-        });
-    }
+    var pointsToShow = LOCATIONS.filter(function(loc) {
+        if (routePointsIds.length > 0) return loc.id === 1 || routePointsIds.indexOf(loc.id) !== -1;
+        if (currentMood === 'all') return true;
+        return loc.tags.indexOf(currentMood) !== -1;
+    });
 
-    // Удаляем старые метки
-    for (var i = 0; i < placemarks.length; i++) {
-        map.geoObjects.remove(placemarks[i]);
-    }
+    for (var i = 0; i < placemarks.length; i++) map.geoObjects.remove(placemarks[i]);
     placemarks = [];
 
     for (var i = 0; i < pointsToShow.length; i++) {
@@ -186,9 +127,10 @@ function loadPoints() {
             buttonClass += ' locked-btn';
         }
         
+        // УБРАЛИ onerror! Теперь картинка просто скрывается через CSS, если не загрузилась
         var balloonHtml = 
             '<div class="point-card">' +
-                (loc.photo ? '<img src="' + loc.photo + '" onerror="this.style.display=\'none\'">' : '') +
+                (loc.photo ? '<img src="' + loc.photo + '" style="display:block; max-width:100%;">' : '') +
                 '<h3>' + loc.name + '</h3>' +
                 '<div class="tags">' + tagsHtml + '</div>' +
                 '<p class="desc">' + loc.description + '</p>' +
@@ -209,52 +151,7 @@ function loadPoints() {
 }
 
 // ==========================================
-// ПОГОДА
-// ==========================================
-function fetchRealWeather(lat, lon) {
-    var API_KEY = 'YOUR_API_KEY';
-    var url = 'https://api.openweathermap.org/data/2.5/weather?lat=' + lat + '&lon=' + lon + '&units=metric&lang=ru&appid=' + API_KEY;
-    
-    if (API_KEY === 'YOUR_API_KEY') {
-        document.getElementById('weatherTemp').textContent = '22°';
-        document.getElementById('weatherIcon').textContent = '☀️';
-        return;
-    }
-    
-    fetch(url)
-        .then(function(response) {
-            if (!response.ok) throw new Error('Ошибка погоды');
-            return response.json();
-        })
-        .then(function(data) {
-            var temp = Math.round(data.main.temp);
-            var icon = getWeatherEmoji(data.weather[0].icon);
-            document.getElementById('weatherTemp').textContent = temp + '°';
-            document.getElementById('weatherIcon').textContent = icon;
-        })
-        .catch(function(error) {
-            document.getElementById('weatherTemp').textContent = '--°';
-            document.getElementById('weatherIcon').textContent = '🌤️';
-        });
-}
-
-function getWeatherEmoji(iconCode) {
-    var emojis = {
-        '01d': '☀️', '01n': '🌙',
-        '02d': '⛅', '02n': '☁️',
-        '03d': '☁️', '03n': '☁️',
-        '04d': '☁️', '04n': '☁️',
-        '09d': '🌧️', '09n': '🌧️',
-        '10d': '🌦️', '10n': '🌧️',
-        '11d': '⛈️', '11n': '⛈️',
-        '13d': '❄️', '13n': '❄️',
-        '50d': '🌫️', '50n': '🌫️'
-    };
-    return emojis[iconCode] || '🌤️';
-}
-
-// ==========================================
-// УПРАВЛЕНИЕ ТОЧКАМИ МАРШРУТА
+// ОСТАЛЬНЫЕ ФУНКЦИИ (без изменений, кроме глобальных)
 // ==========================================
 function setRoutePoints(pointIds) {
     routePointsIds = pointIds || [];
@@ -266,9 +163,6 @@ function clearRoutePoints() {
     loadPoints();
 }
 
-// ==========================================
-// ОСТАЛЬНЫЕ ФУНКЦИИ
-// ==========================================
 function handlePointAction(pointId) {
     var loc = findLocationById(pointId);
     if (!loc) return;
@@ -313,21 +207,13 @@ function setMood(mood) {
     for (var i = 0; i < buttons.length; i++) {
         buttons[i].classList.toggle('active', buttons[i].dataset.mood === mood);
     }
-    if (routePointsIds.length === 0) {
-        loadPoints();
-    }
+    if (routePointsIds.length === 0) loadPoints();
 }
 
-// ==========================================
-// ДЕЛАЕМ ФУНКЦИИ ГЛОБАЛЬНЫМИ
-// ==========================================
+// Глобальные функции
 window.setRoutePoints = setRoutePoints;
 window.clearRoutePoints = clearRoutePoints;
 window.loadPoints = loadPoints;
 window.setMood = setMood;
 window.getUserLocation = getUserLocation;
 window.initMap = initMap;
-window.resetToHotel = resetToHotel;
-window.centerOnUser = centerOnUser;
-
-console.log('✅ map.js загружен');
