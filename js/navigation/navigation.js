@@ -1,5 +1,5 @@
 // js/navigation/navigation.js
-// НАВИГАЦИЯ ПО ВАШИМ СОБСТВЕННЫМ МАРШРУТАМ
+// НАВИГАЦИЯ ПО ВАШИМ СОБСТВЕННЫМ ДОРОГАМ
 
 var isNavigating = false;
 var currentRoutePoints = [];
@@ -8,7 +8,7 @@ var arrived = false;
 var trackingInterval = null;
 
 // ==========================================
-// ПОСТРОЕНИЕ МАРШРУТА (из ваших данных)
+// ПОСТРОЕНИЕ МАРШРУТА (из ваших дорог)
 // ==========================================
 function buildRoute(theme) {
     // 1. Если навигация уже идет — запрещаем
@@ -82,67 +82,103 @@ function buildRoute(theme) {
     }
 
     // 5. Строим маршрут ПО ВАШИМ ДОРОГАМ
-    showToast('⏳ Строим маршрут по вашим дорогам...', 'info', 2000);
+    showToast('⏳ Строим маршрут по дорогам...', 'info', 3000);
     
-    // Проверяем, есть ли функция buildRouteFromRoads
-    if (typeof buildRouteFromRoads === 'function') {
-        // Используем вашу функцию из router.js
-        var routePoints = buildRouteFromRoads(pointsToUse, userLocation);
-        
-        if (routePoints && routePoints.length > 2) {
-            currentRoutePoints = routePoints;
-            currentPointIndex = 0;
-            arrived = false;
-
-            // Удаляем старую линию
-            if (routeLine) {
-                map.geoObjects.remove(routeLine);
-                routeLine = null;
-            }
-
-            routeLine = new ymaps.Polyline(
-                routePoints,
-                { hintContent: '🚶 Ваш маршрут' },
-                {
-                    strokeColor: '#2E7D32',
-                    strokeWidth: 6,
-                    strokeOpacity: 0.9,
-                    strokeStyle: 'solid'
+    // Проверяем, существует ли функция findPathOnRoads
+    if (typeof findPathOnRoads === 'function' && typeof ROADS !== 'undefined') {
+        try {
+            // Строим маршрут через все точки последовательно
+            var allRoutePoints = [];
+            
+            // Начинаем с текущего местоположения
+            var currentPoint = userLocation;
+            
+            // Для каждой точки в маршруте находим путь
+            for (var i = 0; i < pointsToUse.length; i++) {
+                var targetPoint = [pointsToUse[i].lat, pointsToUse[i].lon];
+                
+                // Ищем путь от currentPoint до targetPoint
+                var segment = findPathOnRoads(currentPoint, targetPoint);
+                
+                // Добавляем точки (кроме первой, чтобы избежать дублирования)
+                if (i === 0) {
+                    allRoutePoints = allRoutePoints.concat(segment);
+                } else {
+                    // Пропускаем первую точку сегмента (она совпадает с последней предыдущего)
+                    for (var j = 1; j < segment.length; j++) {
+                        allRoutePoints.push(segment[j]);
+                    }
                 }
-            );
-            map.geoObjects.add(routeLine);
-
-            try {
-                map.setBounds(routeLine.geometry.getBounds(), { checkZoomRange: true, zoomMargin: 30 });
-            } catch(e) {}
-
-            var distance = calculateDistance(routePoints);
-            var time = Math.round(distance / 4.5 * 60);
-            var distanceKm = distance.toFixed(1);
-            var timeStr = formatTime(time);
-
-            selectedPoints = [];
-            if (window.loadPoints) {
-                window.loadPoints();
+                
+                currentPoint = targetPoint;
             }
+            
+            // Возвращаемся в отель
+            var hotelPoint = [55.955087, 36.374705];
+            var returnSegment = findPathOnRoads(currentPoint, hotelPoint);
+            for (var j = 1; j < returnSegment.length; j++) {
+                allRoutePoints.push(returnSegment[j]);
+            }
+            
+            // Проверяем, что маршрут построен
+            if (allRoutePoints.length > 2) {
+                currentRoutePoints = allRoutePoints;
+                currentPointIndex = 0;
+                arrived = false;
 
-            showToast(
-                '✅ Маршрут построен! 📏 ' + distanceKm + ' км • ⏱️ ' + timeStr + ' • ' + pointsToUse.length + ' точек',
-                'success',
-                5000
-            );
+                // Удаляем старую линию
+                if (routeLine) {
+                    map.geoObjects.remove(routeLine);
+                    routeLine = null;
+                }
 
-            updateButtons();
-        } else {
-            // Если не получилось - строим прямые линии
-            showToast('⚠️ Не удалось построить маршрут по дорогам, используем прямые линии', 'warning', 3000);
-            buildFallbackRoute(pointsToUse);
+                routeLine = new ymaps.Polyline(
+                    allRoutePoints,
+                    { hintContent: '🚶 Ваш маршрут' },
+                    {
+                        strokeColor: '#2E7D32',
+                        strokeWidth: 6,
+                        strokeOpacity: 0.9,
+                        strokeStyle: 'solid'
+                    }
+                );
+                map.geoObjects.add(routeLine);
+
+                try {
+                    map.setBounds(routeLine.geometry.getBounds(), { checkZoomRange: true, zoomMargin: 30 });
+                } catch(e) {
+                    if (allRoutePoints.length > 0) {
+                        map.setCenter(allRoutePoints[0], 15);
+                    }
+                }
+
+                var distance = calculateDistance(allRoutePoints);
+                var time = Math.round(distance / 4.5 * 60);
+                var distanceKm = distance.toFixed(1);
+                var timeStr = formatTime(time);
+
+                selectedPoints = [];
+                if (window.loadPoints) {
+                    window.loadPoints();
+                }
+
+                showToast(
+                    '✅ Маршрут построен! 📏 ' + distanceKm + ' км • ⏱️ ' + timeStr + ' • ' + pointsToUse.length + ' точек',
+                    'success',
+                    5000
+                );
+
+                updateButtons();
+                return;
+            }
+        } catch(e) {
+            console.error('Ошибка построения маршрута:', e);
         }
-    } else {
-        // Если функция не найдена - используем прямые линии
-        showToast('⚠️ Функция buildRouteFromRoads не найдена, используем прямые линии', 'warning', 3000);
-        buildFallbackRoute(pointsToUse);
     }
+    
+    // Если не получилось - используем прямые линии
+    showToast('⚠️ Не удалось построить маршрут по дорогам, используем прямые линии', 'warning', 3000);
+    buildFallbackRoute(pointsToUse);
 }
 
 // ==========================================
@@ -441,4 +477,4 @@ window.arrive = arrive;
 window.resetRoute = resetRoute;
 window.saveRating = saveRating;
 
-console.log('✅ navigation.js загружен (собственные маршруты)');
+console.log('✅ navigation.js загружен (собственные дороги)');
