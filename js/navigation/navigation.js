@@ -1,5 +1,5 @@
 // js/navigation/navigation.js
-// НАВИГАЦИЯ ЧЕРЕЗ API ЯНДЕКСА (исправленная версия)
+// НАВИГАЦИЯ ЧЕРЕЗ API ЯНДЕКСА (ИСПРАВЛЕННАЯ ВЕРСИЯ)
 
 var isNavigating = false;
 var currentRoutePoints = [];
@@ -82,124 +82,147 @@ function buildRoute(theme) {
         window.setRoutePoints(routeIds);
     }
 
-    // 5. ГОТОВИМ СПИСОК ТОЧЕК ДЛЯ ЯНДЕКСА
-    // ПРАВИЛЬНЫЙ ФОРМАТ: массив объектов с координатами
+    // 5. ГОТОВИМ ТОЧКИ ДЛЯ ЯНДЕКСА - ПРАВИЛЬНЫЙ ФОРМАТ
     var waypoints = [];
     
     // СТАРТ: отель или текущее местоположение
     var startPoint = userLocation || [55.955087, 36.374705];
-    waypoints.push({
-        type: 'waypoint',
-        point: startPoint
-    });
+    waypoints.push(startPoint);
     
     // ПРОМЕЖУТОЧНЫЕ ТОЧКИ
     for (var i = 0; i < pointsToUse.length; i++) {
-        waypoints.push({
-            type: 'waypoint',
-            point: [pointsToUse[i].lat, pointsToUse[i].lon]
-        });
+        waypoints.push([pointsToUse[i].lat, pointsToUse[i].lon]);
     }
     
     // ФИНИШ: возврат в отель
-    waypoints.push({
-        type: 'waypoint',
-        point: [55.955087, 36.374705]
-    });
+    waypoints.push([55.955087, 36.374705]);
 
     // 6. ОТПРАВЛЯЕМ ЗАПРОС К ЯНДЕКСУ
     showToast('⏳ Строим маршрут...', 'info', 3000);
     
-    ymaps.route(waypoints, {
-        routingMode: 'auto',
-        multiRoute: true,
-        avoidTraffic: false
-    }).then(function(route) {
-        // Успешно получили маршрут
-        var routePoints = [];
-        var paths = route.getPaths();
-        
-        for (var i = 0; i < paths.getLength(); i++) {
-            var path = paths.get(i);
-            var segments = path.getSegments();
-            for (var j = 0; j < segments.getLength(); j++) {
-                var segment = segments.get(j);
-                var coords = segment.getCoordinates();
-                for (var k = 0; k < coords.length; k++) {
-                    routePoints.push(coords[k]);
-                }
-            }
-        }
-        
-        if (routePoints.length < 3) {
-            showToast('⚠️ Маршрут слишком короткий, используем прямые линии', 'warning', 3000);
-            buildFallbackRoute(waypoints);
-            return;
-        }
-        
-        currentRoutePoints = routePoints;
-        currentPointIndex = 0;
-        arrived = false;
-
-        // Удаляем старую линию маршрута
-        if (routeLine) {
-            map.geoObjects.remove(routeLine);
-            routeLine = null;
-        }
-
-        routeLine = new ymaps.Polyline(
-            routePoints,
-            { hintContent: '🚶 Маршрут от Яндекса' },
-            {
-                strokeColor: '#2E7D32',
-                strokeWidth: 6,
-                strokeOpacity: 0.9,
-                strokeStyle: 'solid'
+    // ПЫТАЕМСЯ ПОСТРОИТЬ МАРШРУТ
+    try {
+        ymaps.route(waypoints, {
+            routingMode: 'auto',
+            multiRoute: true,
+            avoidTraffic: false
+        }).then(
+            function(route) {
+                // Успешно получили маршрут
+                processRoute(route, pointsToUse);
+            },
+            function(error) {
+                // Ошибка - пробуем построить простой маршрут с меньшим количеством точек
+                console.warn('Ошибка маршрута:', error);
+                
+                // Пробуем упрощенный маршрут (только старт и финиш)
+                var simpleWaypoints = [
+                    waypoints[0], // старт
+                    waypoints[waypoints.length - 1] // финиш
+                ];
+                
+                ymaps.route(simpleWaypoints, {
+                    routingMode: 'auto',
+                    multiRoute: false,
+                    avoidTraffic: false
+                }).then(
+                    function(route) {
+                        processRoute(route, pointsToUse);
+                    },
+                    function() {
+                        // Если даже простой маршрут не работает - рисуем прямые линии
+                        showToast('⚠️ Не удалось построить маршрут по дорогам, используем прямые линии', 'warning', 4000);
+                        buildFallbackRoute(waypoints);
+                    }
+                );
             }
         );
-        map.geoObjects.add(routeLine);
-
-        try {
-            map.setBounds(route.getBounds(), { checkZoomRange: true, zoomMargin: 30 });
-        } catch(e) {
-            // Если не удалось установить bounds - центрируем на первой точке
-            if (routePoints.length > 0) {
-                map.setCenter(routePoints[0], 15);
-            }
-        }
-
-        // Получаем информацию о маршруте
-        var distance = 0;
-        var time = 0;
-        try {
-            distance = route.getPaths().get(0).getProperties().get('distance') || 0;
-            time = route.getPaths().get(0).getProperties().get('duration') || 0;
-        } catch(e) {
-            distance = calculateDistance(routePoints);
-            time = Math.round(distance / 4.5 * 60);
-        }
-        
-        var distanceKm = (distance / 1000).toFixed(1);
-        var timeStr = formatTime(Math.round(time / 60));
-
-        selectedPoints = [];
-        if (window.loadPoints) {
-            window.loadPoints();
-        }
-
-        showToast(
-            '✅ Маршрут построен!\n📏 ' + distanceKm + ' км • ⏱️ ' + timeStr + ' • ' + pointsToUse.length + ' точек',
-            'success',
-            5000
-        );
-
-        updateButtons();
-
-    }).catch(function(error) {
-        console.error('Ошибка построения маршрута:', error);
-        showToast('⚠️ Не удалось построить маршрут. Используем прямые линии.', 'error', 4000);
+    } catch(e) {
+        console.error('Ошибка:', e);
         buildFallbackRoute(waypoints);
-    });
+    }
+}
+
+// ==========================================
+// ОБРАБОТКА МАРШРУТА
+// ==========================================
+function processRoute(route, pointsToUse) {
+    var routePoints = [];
+    var paths = route.getPaths();
+    
+    for (var i = 0; i < paths.getLength(); i++) {
+        var path = paths.get(i);
+        var segments = path.getSegments();
+        for (var j = 0; j < segments.getLength(); j++) {
+            var segment = segments.get(j);
+            var coords = segment.getCoordinates();
+            for (var k = 0; k < coords.length; k++) {
+                routePoints.push(coords[k]);
+            }
+        }
+    }
+    
+    if (routePoints.length < 3) {
+        showToast('⚠️ Маршрут слишком короткий', 'warning', 3000);
+        return;
+    }
+    
+    currentRoutePoints = routePoints;
+    currentPointIndex = 0;
+    arrived = false;
+
+    // Удаляем старую линию маршрута
+    if (routeLine) {
+        map.geoObjects.remove(routeLine);
+        routeLine = null;
+    }
+
+    routeLine = new ymaps.Polyline(
+        routePoints,
+        { hintContent: '🚶 Маршрут' },
+        {
+            strokeColor: '#2E7D32',
+            strokeWidth: 6,
+            strokeOpacity: 0.9,
+            strokeStyle: 'solid'
+        }
+    );
+    map.geoObjects.add(routeLine);
+
+    try {
+        map.setBounds(route.getBounds(), { checkZoomRange: true, zoomMargin: 30 });
+    } catch(e) {
+        if (routePoints.length > 0) {
+            map.setCenter(routePoints[0], 15);
+        }
+    }
+
+    // Получаем информацию о маршруте
+    var distance = 0;
+    var time = 0;
+    try {
+        distance = route.getPaths().get(0).getProperties().get('distance') || 0;
+        time = route.getPaths().get(0).getProperties().get('duration') || 0;
+    } catch(e) {
+        distance = calculateDistance(routePoints);
+        time = Math.round(distance / 4.5 * 60);
+    }
+    
+    var distanceKm = (distance / 1000).toFixed(1);
+    var timeStr = formatTime(Math.round(time / 60));
+
+    selectedPoints = [];
+    if (window.loadPoints) {
+        window.loadPoints();
+    }
+
+    showToast(
+        '✅ Маршрут построен!\n📏 ' + distanceKm + ' км • ⏱️ ' + timeStr + ' • ' + pointsToUse.length + ' точек',
+        'success',
+        5000
+    );
+
+    updateButtons();
 }
 
 // ==========================================
@@ -207,24 +230,9 @@ function buildRoute(theme) {
 // ==========================================
 function buildFallbackRoute(waypoints) {
     var routePoints = [];
-    // Извлекаем координаты из waypoints
-    var coords = [];
-    for (var i = 0; i < waypoints.length; i++) {
-        if (waypoints[i].point) {
-            coords.push(waypoints[i].point);
-        } else if (Array.isArray(waypoints[i])) {
-            coords.push(waypoints[i]);
-        }
-    }
-    
-    if (coords.length < 2) {
-        showToast('⚠️ Недостаточно точек для маршрута', 'error', 3000);
-        return;
-    }
-    
-    for (var i = 0; i < coords.length - 1; i++) {
-        var start = coords[i];
-        var end = coords[i + 1];
+    for (var i = 0; i < waypoints.length - 1; i++) {
+        var start = waypoints[i];
+        var end = waypoints[i + 1];
         if (!start || !end) continue;
         for (var t = 0; t <= 20; t++) {
             var frac = t / 20;
@@ -235,7 +243,7 @@ function buildFallbackRoute(waypoints) {
     }
     
     if (routePoints.length < 3) {
-        showToast('⚠️ Не удалось построить даже прямой маршрут', 'error', 3000);
+        showToast('⚠️ Не удалось построить маршрут', 'error', 3000);
         return;
     }
     
@@ -285,7 +293,7 @@ function buildRecommendedRoute(routeId) {
         theme = 'forest';
         showToast('🌲 Строим маршрут по лесу...', 'info', 2000);
     } else if (routeId === 3) {
-        showToast('🔒 Закрытая роща доступна по приглашению. Нажмите "Позвонить"', 'warning', 4000);
+        showToast('🔒 Закрытая роща доступна по приглашению', 'warning', 4000);
         return;
     }
     if (theme) {
@@ -302,6 +310,14 @@ function startNavigation() {
         return;
     }
     if (isNavigating) return;
+    
+    // Запрашиваем геолокацию если ее нет
+    if (!isGpsActive || !userLocation) {
+        getUserLocation(function() {
+            startNavigation();
+        });
+        return;
+    }
     
     isNavigating = true;
     currentPointIndex = 0;
@@ -343,7 +359,7 @@ function startNavigation() {
                         var nextPoint = currentRoutePoints[Math.min(currentPointIndex + 2, currentRoutePoints.length - 1)];
                         if (nextPoint) {
                             var dist = getDistance(newPos, nextPoint);
-                            if (dist < 0.015) { // ~15 метров
+                            if (dist < 0.015) {
                                 currentPointIndex = Math.min(currentPointIndex + 2, currentRoutePoints.length - 1);
                             }
                         }
@@ -353,7 +369,7 @@ function startNavigation() {
                     if (currentPointIndex >= currentRoutePoints.length - 2) {
                         var endPoint = currentRoutePoints[currentRoutePoints.length - 1];
                         var distToEnd = getDistance(newPos, endPoint);
-                        if (distToEnd < 0.020) { // ~20 метров до отеля
+                        if (distToEnd < 0.020) {
                             arrived = true;
                             isNavigating = false;
                             if (trackingInterval) clearInterval(trackingInterval);
