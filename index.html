@@ -3,12 +3,20 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <meta http-equiv="Content-Security-Policy" content="script-src 'unsafe-eval' 'unsafe-inline' https://api-maps.yandex.ru https://*.yandex.ru https://yandex.ru;">
-    
     <title>Карта отеля</title>
+    
+    <!-- ПРАВИЛЬНЫЙ CSP ДЛЯ ЯНДЕКС КАРТ -->
+    <meta http-equiv="Content-Security-Policy" content="
+        script-src 'unsafe-eval' 'unsafe-inline' https://api-maps.yandex.ru https://*.yandex.ru https://yandex.ru https://yandex.net;
+        style-src 'unsafe-inline' https://api-maps.yandex.ru;
+        img-src * data: blob: https://*.yandex.net https://yandex.ru;
+        connect-src * https://*.yandex.ru https://yandex.ru;
+        font-src * data:;
+    ">
     
     <link rel="stylesheet" href="css/style.css">
     
+    <!-- ЗАГРУЗКА КАРТ -->
     <script src="https://api-maps.yandex.ru/2.1/?apikey=22180e30-7731-464f-9480-3875701de219&lang=ru_RU" crossorigin="anonymous"></script>
 </head>
 <body>
