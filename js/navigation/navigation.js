@@ -28,10 +28,11 @@ function buildRoute(theme) {
     // 3. Определяем, какие точки брать
     var pointsToUse = [];
 
-    if (theme && theme !== 'all') {
+    if (theme && theme !== 'all' && theme !== 'undefined') {
         var filtered = LOCATIONS.filter(function(loc) {
             return loc.id !== 1 && loc.tags.indexOf(theme) !== -1 && (!loc.locked || isLockedAccessGranted);
         });
+        // Перемешиваем
         for (var i = filtered.length - 1; i > 0; i--) {
             var j = Math.floor(Math.random() * (i + 1));
             var temp = filtered[i];
@@ -82,30 +83,32 @@ function buildRoute(theme) {
     }
 
     // 5. ГОТОВИМ СПИСОК ТОЧЕК ДЛЯ ЯНДЕКСА
+    // ПРАВИЛЬНЫЙ ФОРМАТ: массив объектов с координатами
     var waypoints = [];
     
-    // СТАРТ: отель (текущее местоположение)
-    if (userLocation && userLocation.length === 2) {
-        waypoints.push(userLocation);
-    } else {
-        // Если геолокация недоступна — используем координаты отеля
-        waypoints.push([55.955087, 36.374705]);
-    }
+    // СТАРТ: отель или текущее местоположение
+    var startPoint = userLocation || [55.955087, 36.374705];
+    waypoints.push({
+        type: 'waypoint',
+        point: startPoint
+    });
     
     // ПРОМЕЖУТОЧНЫЕ ТОЧКИ
     for (var i = 0; i < pointsToUse.length; i++) {
-        waypoints.push([pointsToUse[i].lat, pointsToUse[i].lon]);
+        waypoints.push({
+            type: 'waypoint',
+            point: [pointsToUse[i].lat, pointsToUse[i].lon]
+        });
     }
     
     // ФИНИШ: возврат в отель
-    if (userLocation && userLocation.length === 2) {
-        waypoints.push(userLocation);
-    } else {
-        waypoints.push([55.955087, 36.374705]);
-    }
+    waypoints.push({
+        type: 'waypoint',
+        point: [55.955087, 36.374705]
+    });
 
     // 6. ОТПРАВЛЯЕМ ЗАПРОС К ЯНДЕКСУ
-    showToast('⏳ Строим маршрут по картам Яндекса...', 'info', 3000);
+    showToast('⏳ Строим маршрут...', 'info', 3000);
     
     ymaps.route(waypoints, {
         routingMode: 'auto',
@@ -138,8 +141,10 @@ function buildRoute(theme) {
         currentPointIndex = 0;
         arrived = false;
 
+        // Удаляем старую линию маршрута
         if (routeLine) {
             map.geoObjects.remove(routeLine);
+            routeLine = null;
         }
 
         routeLine = new ymaps.Polyline(
@@ -147,7 +152,7 @@ function buildRoute(theme) {
             { hintContent: '🚶 Маршрут от Яндекса' },
             {
                 strokeColor: '#2E7D32',
-                strokeWidth: 5,
+                strokeWidth: 6,
                 strokeOpacity: 0.9,
                 strokeStyle: 'solid'
             }
@@ -156,20 +161,26 @@ function buildRoute(theme) {
 
         try {
             map.setBounds(route.getBounds(), { checkZoomRange: true, zoomMargin: 30 });
-        } catch(e) {}
+        } catch(e) {
+            // Если не удалось установить bounds - центрируем на первой точке
+            if (routePoints.length > 0) {
+                map.setCenter(routePoints[0], 15);
+            }
+        }
 
+        // Получаем информацию о маршруте
         var distance = 0;
         var time = 0;
         try {
-            distance = route.getPaths().get(0).getProperties().get('distance');
-            time = route.getPaths().get(0).getProperties().get('duration');
+            distance = route.getPaths().get(0).getProperties().get('distance') || 0;
+            time = route.getPaths().get(0).getProperties().get('duration') || 0;
         } catch(e) {
             distance = calculateDistance(routePoints);
             time = Math.round(distance / 4.5 * 60);
         }
         
         var distanceKm = (distance / 1000).toFixed(1);
-        var timeStr = formatTime(time);
+        var timeStr = formatTime(Math.round(time / 60));
 
         selectedPoints = [];
         if (window.loadPoints) {
@@ -185,9 +196,8 @@ function buildRoute(theme) {
         updateButtons();
 
     }).catch(function(error) {
-        // Если Яндекс не смог построить маршрут
         console.error('Ошибка построения маршрута:', error);
-        showToast('⚠️ Яндекс не смог построить маршрут. Используем прямые линии.', 'error', 4000);
+        showToast('⚠️ Не удалось построить маршрут. Используем прямые линии.', 'error', 4000);
         buildFallbackRoute(waypoints);
     });
 }
@@ -197,12 +207,27 @@ function buildRoute(theme) {
 // ==========================================
 function buildFallbackRoute(waypoints) {
     var routePoints = [];
-    for (var i = 0; i < waypoints.length - 1; i++) {
-        var start = waypoints[i];
-        var end = waypoints[i + 1];
+    // Извлекаем координаты из waypoints
+    var coords = [];
+    for (var i = 0; i < waypoints.length; i++) {
+        if (waypoints[i].point) {
+            coords.push(waypoints[i].point);
+        } else if (Array.isArray(waypoints[i])) {
+            coords.push(waypoints[i]);
+        }
+    }
+    
+    if (coords.length < 2) {
+        showToast('⚠️ Недостаточно точек для маршрута', 'error', 3000);
+        return;
+    }
+    
+    for (var i = 0; i < coords.length - 1; i++) {
+        var start = coords[i];
+        var end = coords[i + 1];
         if (!start || !end) continue;
-        for (var t = 0; t <= 10; t++) {
-            var frac = t / 10;
+        for (var t = 0; t <= 20; t++) {
+            var frac = t / 20;
             var lat = start[0] + (end[0] - start[0]) * frac;
             var lon = start[1] + (end[1] - start[1]) * frac;
             routePoints.push([lat, lon]);
@@ -220,7 +245,9 @@ function buildFallbackRoute(waypoints) {
     
     if (routeLine) {
         map.geoObjects.remove(routeLine);
+        routeLine = null;
     }
+    
     routeLine = new ymaps.Polyline(
         routePoints,
         { hintContent: '🚶 Прямой маршрут' },
@@ -285,13 +312,22 @@ function startNavigation() {
     showToast('🚶 Начинаем прогулку!', 'success', 3000);
     
     if (trackingInterval) clearInterval(trackingInterval);
-    trackingInterval = setInterval(function() {
-        if (isNavigating && navigator.geolocation) {
+    
+    // Функция обновления позиции
+    var updatePosition = function() {
+        if (!isNavigating) {
+            if (trackingInterval) clearInterval(trackingInterval);
+            return;
+        }
+        
+        if (navigator.geolocation) {
             navigator.geolocation.getCurrentPosition(
                 function(pos) {
                     var newPos = [pos.coords.latitude, pos.coords.longitude];
                     userLocation = newPos;
+                    isGpsActive = true;
                     
+                    // Обновляем маркер пользователя
                     if (userMarker) {
                         map.geoObjects.remove(userMarker);
                     }
@@ -302,32 +338,44 @@ function startNavigation() {
                     );
                     map.geoObjects.add(userMarker);
                     
-                    var nextIdx = Math.min(currentPointIndex + 2, currentRoutePoints.length - 1);
-                    var nextPoint = currentRoutePoints[nextIdx];
-                    
-                    if (nextPoint) {
-                        var dist = getDistance(newPos, nextPoint);
-                        if (dist < 0.020) {
-                            currentPointIndex = nextIdx;
-                            if (currentPointIndex >= currentRoutePoints.length - 1) {
-                                arrived = true;
-                                isNavigating = false;
-                                if (trackingInterval) clearInterval(trackingInterval);
-                                document.getElementById('navInfo').classList.remove('show');
-                                updateButtons();
-                                showToast('🎉 Вы вернулись в отель! Нажмите "Пришли"', 'success', 4000);
+                    // Проверяем, достигли ли мы следующей точки
+                    if (currentPointIndex < currentRoutePoints.length - 1) {
+                        var nextPoint = currentRoutePoints[Math.min(currentPointIndex + 2, currentRoutePoints.length - 1)];
+                        if (nextPoint) {
+                            var dist = getDistance(newPos, nextPoint);
+                            if (dist < 0.015) { // ~15 метров
+                                currentPointIndex = Math.min(currentPointIndex + 2, currentRoutePoints.length - 1);
                             }
                         }
                     }
                     
+                    // Проверяем, не достигли ли конца маршрута
+                    if (currentPointIndex >= currentRoutePoints.length - 2) {
+                        var endPoint = currentRoutePoints[currentRoutePoints.length - 1];
+                        var distToEnd = getDistance(newPos, endPoint);
+                        if (distToEnd < 0.020) { // ~20 метров до отеля
+                            arrived = true;
+                            isNavigating = false;
+                            if (trackingInterval) clearInterval(trackingInterval);
+                            document.getElementById('navInfo').classList.remove('show');
+                            updateButtons();
+                            showToast('🎉 Вы вернулись в отель! Нажмите "Пришли"', 'success', 4000);
+                            return;
+                        }
+                    }
+                    
+                    // Обновляем информацию о расстоянии
                     var remaining = 0;
-                    for (var i = currentPointIndex; i < currentRoutePoints.length - 1; i++) {
+                    var startIdx = Math.min(currentPointIndex, currentRoutePoints.length - 1);
+                    for (var i = startIdx; i < currentRoutePoints.length - 1; i++) {
                         remaining += getDistance(currentRoutePoints[i], currentRoutePoints[i + 1]);
                     }
                     document.getElementById('remainingDistance').textContent = remaining.toFixed(1);
                     
+                    // Определяем название ближайшей точки
                     var nearestName = '🏁 Отель';
-                    if (nextPoint && currentPointIndex < currentRoutePoints.length - 2) {
+                    if (currentPointIndex < currentRoutePoints.length - 2) {
+                        var nextPoint = currentRoutePoints[Math.min(currentPointIndex + 2, currentRoutePoints.length - 1)];
                         var minDist = Infinity;
                         for (var i = 0; i < LOCATIONS.length; i++) {
                             var loc = LOCATIONS[i];
@@ -340,11 +388,18 @@ function startNavigation() {
                     }
                     document.getElementById('nextPointName').textContent = nearestName;
                 },
-                function() {},
-                { enableHighAccuracy: true }
+                function(err) {
+                    console.warn('Ошибка геолокации:', err);
+                },
+                { enableHighAccuracy: true, timeout: 10000 }
             );
         }
-    }, 3000);
+    };
+    
+    // Первое обновление
+    updatePosition();
+    // Запускаем интервал
+    trackingInterval = setInterval(updatePosition, 3000);
 }
 
 // ==========================================
@@ -436,9 +491,9 @@ function calculateDistance(points) {
 
 function formatTime(minutes) {
     if (!minutes || minutes < 0) return '0 мин';
-    if (minutes < 60) return minutes + ' мин';
+    if (minutes < 60) return Math.round(minutes) + ' мин';
     var h = Math.floor(minutes / 60);
-    var m = minutes % 60;
+    var m = Math.round(minutes % 60);
     return h + ' ч ' + m + ' мин';
 }
 
