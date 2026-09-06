@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Карта отеля</title>
+    
+    <link rel="stylesheet" href="css/style.css">
+    
+    <script src="https://api-maps.yandex.ru/2.1/?apikey=22180e30-7731-464f-9480-3875701de219&lang=ru_RU" crossorigin="anonymous"></script>
+</head>
+<body>
+
+    <!-- ===== ШАПКА ===== -->
+    <header class="header">
+        <h1>🌳 Отель &amp; Поселок</h1>
+        <div class="weather">
+            <span id="weatherTemp">22°</span>
+            <span id="weatherIcon">☀️</span>
+        </div>
+    </header>
+
+    <!-- ===== НАСТРОЕНИЕ ===== -->
+    <div class="mood-section">
+        <div class="mood-scroll" id="moodScroll">
+            <button class="mood-btn" data-mood="all" onclick="buildRoute('all')">🌟 Всё</button>
+            <button class="mood-btn" data-mood="forest" onclick="buildRoute('forest')">🌲 Лес</button>
+            <button class="mood-btn" data-mood="water" onclick="buildRoute('water')">🌊 Вода</button>
+            <button class="mood-btn" data-mood="kids" onclick="buildRoute('kids')">🎠 Дети</button>
+            <button class="mood-btn" data-mood="restaurant" onclick="buildRoute('restaurant')">🍽️ Еда</button>
+            <button class="mood-btn" data-mood="spa" onclick="buildRoute('spa')">💆 СПА</button>
+            <button class="mood-btn" data-mood="walk" onclick="buildRoute('walk')">🚶 Прогулка</button>
+            <button class="mood-btn" data-mood="beauty" onclick="buildRoute('beauty')">📸 Красиво</button>
+            <button class="mood-btn" data-mood="run" onclick="buildRoute('run')">🏃 Бег</button>
+        </div>
+    </div>
+
+    <!-- ===== ТОП МАРШРУТОВ ===== -->
+    <div class="top-routes">
+        <div class="top-scroll">
+            <div class="route-card" onclick="buildRecommendedRoute(1)">
+                <span class="route-badge">🔥 Популярный</span>
+                <h3>Прогулка к озеру</h3>
+                <p>🌊💚 45 мин</p>
+            </div>
+            <div class="route-card" onclick="buildRecommendedRoute(2)">
+                <span class="route-badge">⭐ Рекомендуем</span>
+                <h3>Сказочный лес</h3>
+                <p>🌲📸 1.5 часа</p>
+            </div>
+            <div class="route-card route-locked">
+                <span class="route-badge">🔒 Эксклюзив</span>
+                <h3>Закрытая роща</h3>
+                <p>🌳 Требуется приглашение</p>
+                <button class="call-btn" onclick="callManager()">📞 Позвонить</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ===== КАРТА ===== -->
+    <div class="map-container">
+        <div id="map"></div>
+        
+        <div id="toastContainer" class="toast-container"></div>
+        
+        <div id="navInfo" class="nav-info">
+            <div>🚶 До <span class="next-point" id="nextPointName">---</span>: <span class="distance" id="remainingDistance">0</span> км</div>
+        </div>
+        
+        <div class="nav-panel">
+            <button id="buildBtn" class="nav-btn build" onclick="buildRoute('all')">🗺️ Маршрут</button>
+            <button id="goBtn" class="nav-btn go" disabled onclick="startNavigation()">🚶 Пошли</button>
+            <button id="resetBtn" class="nav-btn reset" onclick="resetRoute()">🔄 Сброс</button>
+            <button id="arriveBtn" class="nav-btn arrive" disabled onclick="arrive()">🏁 Пришли</button>
+        </div>
+        
+        <button id="myLocationBtn" class="location-btn" onclick="centerOnUser()">📍</button>
+        <button id="resetLocationBtn" class="location-btn" style="bottom:140px; right:12px; background:#FF6F00; color:white; border:none; border-radius:50%; width:44px; height:44px; font-size:16px; box-shadow:0 2px 8px rgba(0,0,0,0.15); cursor:pointer; z-index:100;" onclick="resetToHotel()">🏨</button>
+    </div>
+
+    <!-- ===== МОДАЛКА ОЦЕНКИ ===== -->
+    <div id="ratingModal" class="modal hidden">
+        <div class="modal-content">
+            <h3>Как вам прогулка?</h3>
+            <p>Оцените маршрут</p>
+            <div class="rating-emojis">
+                <button class="rating-btn" onclick="saveRating('good')">😊</button>
+                <button class="rating-btn" onclick="saveRating('normal')">😐</button>
+                <button class="rating-btn" onclick="saveRating('bad')">😞</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="js/data/locations.js"></script>
+    <script src="js/core/utils.js"></script>
+    <script src="js/ui/toast.js"></script>
+    <script src="js/ui/buttons.js"></script>
+    <script src="js/map/map.js"></script>
+    <script src="js/navigation/navigation.js"></script>
+    <script src="js/app.js"></script>
+
+</body>
+</html>
