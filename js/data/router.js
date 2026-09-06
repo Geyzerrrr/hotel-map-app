@@ -4,10 +4,16 @@
 // ==========================================
 // ПОИСК ПУТИ ПО ДОРОГАМ (ОСНОВНАЯ ФУНКЦИЯ)
 // ==========================================
-function findPathOnRoads(start, end) {
+function findPathOnRoads(start, end, roads) {
+    // Проверка, что roads существует и это массив
+    if (!roads || !roads.length) {
+        console.warn('ROADS пуст или не передан в findPathOnRoads');
+        return [start, end];
+    }
+
     // 1. Находим ближайшие точки на дорогах
-    var startNode = findNearestRoadPoint(start);
-    var endNode = findNearestRoadPoint(end);
+    var startNode = findNearestRoadPoint(start, roads);
+    var endNode = findNearestRoadPoint(end, roads);
     
     // 2. Если точки уже на дороге или рядом — используем их
     if (!startNode || !endNode) {
@@ -15,7 +21,7 @@ function findPathOnRoads(start, end) {
     }
     
     // 3. Строим полный граф дорог
-    var graph = buildGraph();
+    var graph = buildGraph(roads);
     
     // 4. Ищем путь A*
     var path = findPathAStar(graph, startNode, endNode);
@@ -23,7 +29,7 @@ function findPathOnRoads(start, end) {
     // 5. Если путь не найден — пробуем соединить через промежуточные точки
     if (path.length < 2) {
         // Пытаемся найти путь через все узлы
-        var allNodes = getAllRoadNodes();
+        var allNodes = getAllRoadNodes(roads);
         var bestPath = null;
         var bestDist = Infinity;
         
@@ -65,12 +71,12 @@ function findPathOnRoads(start, end) {
 // ==========================================
 
 // Поиск ближайшей точки на дороге
-function findNearestRoadPoint(point) {
+function findNearestRoadPoint(point, roads) {
     var minDist = Infinity;
     var nearest = null;
     
-    for (var i = 0; i < ROADS.length; i++) {
-        var road = ROADS[i];
+    for (var i = 0; i < roads.length; i++) {
+        var road = roads[i];
         var dist1 = getDistance(point, road.from);
         var dist2 = getDistance(point, road.to);
         
@@ -88,12 +94,12 @@ function findNearestRoadPoint(point) {
 }
 
 // Получить все уникальные узлы дорог
-function getAllRoadNodes() {
+function getAllRoadNodes(roads) {
     var nodes = [];
     var seen = {};
     
-    for (var i = 0; i < ROADS.length; i++) {
-        var road = ROADS[i];
+    for (var i = 0; i < roads.length; i++) {
+        var road = roads[i];
         var key1 = road.from[0].toFixed(6) + ',' + road.from[1].toFixed(6);
         var key2 = road.to[0].toFixed(6) + ',' + road.to[1].toFixed(6);
         
@@ -113,11 +119,11 @@ function getAllRoadNodes() {
 // ==========================================
 // ПОСТРОЕНИЕ ГРАФА
 // ==========================================
-function buildGraph() {
+function buildGraph(roads) {
     var graph = {};
     
-    for (var i = 0; i < ROADS.length; i++) {
-        var road = ROADS[i];
+    for (var i = 0; i < roads.length; i++) {
+        var road = roads[i];
         var fromKey = road.from[0].toFixed(6) + ',' + road.from[1].toFixed(6);
         var toKey = road.to[0].toFixed(6) + ',' + road.to[1].toFixed(6);
         
