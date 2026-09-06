@@ -8,6 +8,26 @@ var arrived = false;
 var trackingInterval = null;
 
 // ==========================================
+// ЗАГРУЗКА МОДУЛЯ МАРШРУТИЗАЦИИ
+// ==========================================
+function ensureRouteModule() {
+    return new Promise(function(resolve, reject) {
+        // Проверяем, загружен ли модуль маршрутизации
+        if (typeof ymaps.route === 'function') {
+            resolve();
+            return;
+        }
+        
+        // Загружаем модуль маршрутизации
+        ymaps.modules.require(['route'], function() {
+            resolve();
+        }, function(error) {
+            reject(error);
+        });
+    });
+}
+
+// ==========================================
 // ПОСТРОЕНИЕ МАРШРУТА (ЧЕРЕЗ ЯНДЕКС API)
 // ==========================================
 function buildRoute(theme) {
@@ -82,7 +102,7 @@ function buildRoute(theme) {
         window.setRoutePoints(routeIds);
     }
 
-    // 5. ГОТОВИМ ТОЧКИ ДЛЯ ЯНДЕКСА - ПРАВИЛЬНЫЙ ФОРМАТ
+    // 5. ГОТОВИМ ТОЧКИ ДЛЯ ЯНДЕКСА
     var waypoints = [];
     
     // СТАРТ: отель или текущее местоположение
@@ -97,50 +117,31 @@ function buildRoute(theme) {
     // ФИНИШ: возврат в отель
     waypoints.push([55.955087, 36.374705]);
 
-    // 6. ОТПРАВЛЯЕМ ЗАПРОС К ЯНДЕКСУ
-    showToast('⏳ Строим маршрут...', 'info', 3000);
+    // 6. ЗАГРУЖАЕМ МОДУЛЬ МАРШРУТИЗАЦИИ И СТРОИМ МАРШРУТ
+    showToast('⏳ Загрузка модуля маршрутизации...', 'info', 2000);
     
-    // ПЫТАЕМСЯ ПОСТРОИТЬ МАРШРУТ
-    try {
+    ymaps.modules.require(['route'], function() {
+        showToast('⏳ Строим маршрут...', 'info', 2000);
+        
         ymaps.route(waypoints, {
             routingMode: 'auto',
             multiRoute: true,
             avoidTraffic: false
         }).then(
             function(route) {
-                // Успешно получили маршрут
                 processRoute(route, pointsToUse);
             },
             function(error) {
-                // Ошибка - пробуем построить простой маршрут с меньшим количеством точек
-                console.warn('Ошибка маршрута:', error);
-                
-                // Пробуем упрощенный маршрут (только старт и финиш)
-                var simpleWaypoints = [
-                    waypoints[0], // старт
-                    waypoints[waypoints.length - 1] // финиш
-                ];
-                
-                ymaps.route(simpleWaypoints, {
-                    routingMode: 'auto',
-                    multiRoute: false,
-                    avoidTraffic: false
-                }).then(
-                    function(route) {
-                        processRoute(route, pointsToUse);
-                    },
-                    function() {
-                        // Если даже простой маршрут не работает - рисуем прямые линии
-                        showToast('⚠️ Не удалось построить маршрут по дорогам, используем прямые линии', 'warning', 4000);
-                        buildFallbackRoute(waypoints);
-                    }
-                );
+                console.error('Ошибка маршрута:', error);
+                showToast('⚠️ Не удалось построить маршрут по дорогам', 'warning', 3000);
+                buildFallbackRoute(waypoints);
             }
         );
-    } catch(e) {
-        console.error('Ошибка:', e);
+    }, function(error) {
+        console.error('Ошибка загрузки модуля:', error);
+        showToast('⚠️ Не удалось загрузить модуль маршрутизации', 'error', 3000);
         buildFallbackRoute(waypoints);
-    }
+    });
 }
 
 // ==========================================
