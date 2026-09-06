@@ -1,5 +1,5 @@
 // js/navigation/navigation.js
-// НАВИГАЦИЯ ЧЕРЕЗ API ЯНДЕКСА (ИСПРАВЛЕННАЯ ВЕРСИЯ)
+// НАВИГАЦИЯ ПО ВАШИМ СОБСТВЕННЫМ МАРШРУТАМ
 
 var isNavigating = false;
 var currentRoutePoints = [];
@@ -8,7 +8,7 @@ var arrived = false;
 var trackingInterval = null;
 
 // ==========================================
-// ПОСТРОЕНИЕ МАРШРУТА (ЧЕРЕЗ API ЯНДЕКСА)
+// ПОСТРОЕНИЕ МАРШРУТА (из ваших данных)
 // ==========================================
 function buildRoute(theme) {
     // 1. Если навигация уже идет — запрещаем
@@ -81,63 +81,15 @@ function buildRoute(theme) {
         window.setRoutePoints(routeIds);
     }
 
-    // 5. ГОТОВИМ ТОЧКИ ДЛЯ ЯНДЕКСА
-    var waypoints = [];
-    var startPoint = userLocation || [55.955087, 36.374705];
-    waypoints.push(startPoint);
-    for (var i = 0; i < pointsToUse.length; i++) {
-        waypoints.push([pointsToUse[i].lat, pointsToUse[i].lon]);
-    }
-    waypoints.push([55.955087, 36.374705]);
-
-    // 6. ИСПОЛЬЗУЕМ multiRouter ВМЕСТО route
-    showToast('⏳ Строим маршрут...', 'info', 3000);
+    // 5. Строим маршрут ПО ВАШИМ ДОРОГАМ
+    showToast('⏳ Строим маршрут по вашим дорогам...', 'info', 2000);
     
-    // Загружаем модуль multiRouter
-    ymaps.modules.require(['multiRouter.MultiRoute'], function() {
+    // Проверяем, есть ли функция buildRouteFromRoads
+    if (typeof buildRouteFromRoads === 'function') {
+        // Используем вашу функцию из router.js
+        var routePoints = buildRouteFromRoads(pointsToUse, userLocation);
         
-        // Создаем маршрут через multiRouter
-        var multiRoute = new ymaps.multiRouter.MultiRoute({
-            referencePoints: waypoints,
-            params: {
-                routingMode: 'auto'
-            }
-        }, {
-            boundsAutoApply: true,
-            wayPointDraggable: false
-        });
-        
-        // Ждем загрузки маршрута
-        multiRoute.events.add('load', function() {
-            // Получаем координаты маршрута
-            var routePoints = [];
-            var paths = multiRoute.getPaths();
-            
-            if (paths) {
-                for (var i = 0; i < paths.getLength(); i++) {
-                    var path = paths.get(i);
-                    var segments = path.getSegments();
-                    if (segments) {
-                        for (var j = 0; j < segments.getLength(); j++) {
-                            var segment = segments.get(j);
-                            var coords = segment.getCoordinates();
-                            if (coords) {
-                                for (var k = 0; k < coords.length; k++) {
-                                    routePoints.push(coords[k]);
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            
-            if (routePoints.length < 3) {
-                showToast('⚠️ Маршрут слишком короткий', 'warning', 3000);
-                buildFallbackRoute(waypoints);
-                return;
-            }
-            
-            // Сохраняем маршрут
+        if (routePoints && routePoints.length > 2) {
             currentRoutePoints = routePoints;
             currentPointIndex = 0;
             arrived = false;
@@ -148,10 +100,9 @@ function buildRoute(theme) {
                 routeLine = null;
             }
 
-            // Рисуем маршрут
             routeLine = new ymaps.Polyline(
                 routePoints,
-                { hintContent: '🚶 Маршрут' },
+                { hintContent: '🚶 Ваш маршрут' },
                 {
                     strokeColor: '#2E7D32',
                     strokeWidth: 6,
@@ -161,33 +112,14 @@ function buildRoute(theme) {
             );
             map.geoObjects.add(routeLine);
 
-            // Добавляем маршрут на карту
-            map.geoObjects.add(multiRoute);
-
             try {
-                map.setBounds(multiRoute.getBounds(), { checkZoomRange: true, zoomMargin: 30 });
-            } catch(e) {
-                if (routePoints.length > 0) {
-                    map.setCenter(routePoints[0], 15);
-                }
-            }
+                map.setBounds(routeLine.geometry.getBounds(), { checkZoomRange: true, zoomMargin: 30 });
+            } catch(e) {}
 
-            // Получаем информацию о маршруте
-            var distance = 0;
-            var time = 0;
-            try {
-                var activeRoute = multiRoute.getActiveRoute();
-                if (activeRoute) {
-                    distance = activeRoute.getLength() || 0;
-                    time = activeRoute.getDuration() || 0;
-                }
-            } catch(e) {
-                distance = calculateDistance(routePoints);
-                time = Math.round(distance / 4.5 * 60);
-            }
-            
-            var distanceKm = (distance / 1000).toFixed(1);
-            var timeStr = formatTime(Math.round(time / 60));
+            var distance = calculateDistance(routePoints);
+            var time = Math.round(distance / 4.5 * 60);
+            var distanceKm = distance.toFixed(1);
+            var timeStr = formatTime(time);
 
             selectedPoints = [];
             if (window.loadPoints) {
@@ -195,40 +127,35 @@ function buildRoute(theme) {
             }
 
             showToast(
-                '✅ Маршрут построен!\n📏 ' + distanceKm + ' км • ⏱️ ' + timeStr + ' • ' + pointsToUse.length + ' точек',
+                '✅ Маршрут построен! 📏 ' + distanceKm + ' км • ⏱️ ' + timeStr + ' • ' + pointsToUse.length + ' точек',
                 'success',
                 5000
             );
 
             updateButtons();
-        });
-        
-        // Обработка ошибок
-        multiRoute.events.add('error', function(error) {
-            console.error('Ошибка multiRoute:', error);
-            showToast('⚠️ Не удалось построить маршрут по дорогам', 'warning', 3000);
-            buildFallbackRoute(waypoints);
-        });
-        
-        // Таймаут на случай, если маршрут не загружается
-        setTimeout(function() {
-            if (currentRoutePoints.length === 0) {
-                showToast('⚠️ Маршрут не загрузился, используем прямые линии', 'warning', 3000);
-                buildFallbackRoute(waypoints);
-            }
-        }, 10000);
-        
-    }, function(error) {
-        console.error('Ошибка загрузки multiRouter:', error);
-        showToast('⚠️ Не удалось загрузить модуль маршрутизации', 'error', 3000);
-        buildFallbackRoute(waypoints);
-    });
+        } else {
+            // Если не получилось - строим прямые линии
+            showToast('⚠️ Не удалось построить маршрут по дорогам, используем прямые линии', 'warning', 3000);
+            buildFallbackRoute(pointsToUse);
+        }
+    } else {
+        // Если функция не найдена - используем прямые линии
+        showToast('⚠️ Функция buildRouteFromRoads не найдена, используем прямые линии', 'warning', 3000);
+        buildFallbackRoute(pointsToUse);
+    }
 }
 
 // ==========================================
 // ЗАПАСНОЙ ВАРИАНТ (прямые линии)
 // ==========================================
-function buildFallbackRoute(waypoints) {
+function buildFallbackRoute(pointsToUse) {
+    var waypoints = [];
+    waypoints.push(userLocation);
+    for (var i = 0; i < pointsToUse.length; i++) {
+        waypoints.push([pointsToUse[i].lat, pointsToUse[i].lon]);
+    }
+    waypoints.push([55.955087, 36.374705]);
+    
     var routePoints = [];
     for (var i = 0; i < waypoints.length - 1; i++) {
         var start = waypoints[i];
@@ -514,4 +441,4 @@ window.arrive = arrive;
 window.resetRoute = resetRoute;
 window.saveRating = saveRating;
 
-console.log('✅ navigation.js загружен');
+console.log('✅ navigation.js загружен (собственные маршруты)');
